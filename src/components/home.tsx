@@ -3,57 +3,91 @@ import Header from "./Header";
 import ProductGrid from "./ProductGrid";
 import { CartDrawer } from "./CartDrawer";
 import { useCart } from "@/lib/CartContext";
+import { supabase } from "@/lib/supabase";
+import type { Database } from "@/types/supabase";
+
+type Product = Database["public"]["Tables"]["products"]["Row"];
 
 interface HomePageProps {
   onSearch?: (query: string) => void;
   onFilterChange?: (filter: string) => void;
-  products?: Array<{
-    id: string;
-    image: string;
-    name: string;
-    description: string;
-    price: number;
-  }>;
 }
 
 const HomePage = ({
   onSearch = () => console.log("Search triggered"),
   onFilterChange = () => console.log("Filter changed"),
-  products = [
-    {
-      id: "1",
-      image:
-        "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500&auto=format&fit=crop&q=60",
-      name: "Classic T-Shirt",
-      description: "Comfortable cotton t-shirt perfect for any occasion",
-      price: 29.99,
-    },
-    {
-      id: "2",
-      image:
-        "https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=500&auto=format&fit=crop&q=60",
-      name: "Premium Hoodie",
-      description: "Warm and stylish hoodie for cold weather",
-      price: 49.99,
-    },
-    {
-      id: "3",
-      image:
-        "https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=500&auto=format&fit=crop&q=60",
-      name: "Baseball Cap",
-      description: "Classic baseball cap with adjustable strap",
-      price: 19.99,
-    },
-  ],
 }: HomePageProps) => {
   const [isCartOpen, setIsCartOpen] = React.useState(false);
   const { itemCount } = useCart();
+  const [products, setProducts] = React.useState<Product[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [currentFilter, setCurrentFilter] = React.useState("");
+
+  React.useEffect(() => {
+    const fetchProducts = async () => {
+      let query = supabase
+        .from("products")
+        .select(
+          `
+          id,
+          name,
+          description,
+          price,
+          image_url,
+          is_available,
+          category_id
+        `,
+        )
+        .eq("is_available", true);
+
+      if (searchQuery) {
+        query = query.ilike("name", `%${searchQuery}%`);
+      }
+
+      switch (currentFilter) {
+        case "price-low":
+          query = query.order("price", { ascending: true });
+          break;
+        case "price-high":
+          query = query.order("price", { ascending: false });
+          break;
+        case "newest":
+          query = query.order("created_at", { ascending: false });
+          break;
+        default:
+          query = query.order("name", { ascending: true });
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("Error fetching products:", error);
+        return;
+      }
+
+      setProducts(data || []);
+      setLoading(false);
+    };
+
+    fetchProducts();
+  }, [searchQuery, currentFilter]);
+
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    onSearch(query);
+  };
+
+  const handleFilterChange = (filter: string) => {
+    setCurrentFilter(filter);
+    onFilterChange(filter);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header
-        onSearch={onSearch}
-        onFilterChange={onFilterChange}
+        onSearch={handleSearch}
+        onFilterChange={handleFilterChange}
         onCartClick={() => setIsCartOpen(true)}
         cartItemCount={itemCount}
       />
@@ -62,7 +96,13 @@ const HomePage = ({
           <h1 className="text-3xl font-bold text-gray-900 mb-6">
             Promotional Products
           </h1>
-          <ProductGrid products={products} />
+          {loading ? (
+            <div className="flex justify-center items-center h-64">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+            </div>
+          ) : (
+            <ProductGrid products={products} />
+          )}
         </div>
       </main>
       <CartDrawer open={isCartOpen} onClose={() => setIsCartOpen(false)} />
